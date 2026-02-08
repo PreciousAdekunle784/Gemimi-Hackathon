@@ -215,4 +215,5 @@ window.runGeminiLogic = async () => {
 };
 
 window.addEventListener('resize', resize);
+
 resize(); draw();
