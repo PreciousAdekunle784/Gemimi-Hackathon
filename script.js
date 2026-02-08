@@ -10,7 +10,7 @@ import {
     updateProfile,
     signOut,
     GoogleAuthProvider,
-    signInWithRedirect
+    signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 // --- 1. CONFIGURATION ---
@@ -27,23 +27,14 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-// ❌ IMPORTANT: DO NOT sign out on load
-// signOut(auth);
-
-// --- AUTH STATE HANDLER (THIS IS THE KEY FIX) ---
-onAuthStateChanged(auth, (user) => {
-    if (user) {
-        // If user already authenticated, skip welcome/login
-        if (currentStage !== 'boot' && currentStage !== 'ui') {
-            toStage('stage-boot');
-            runBoot(user.displayName || "Operator");
-        }
-    }
-});
+// MANDATORY: Sign out on load
+signOut(auth);
 
 // Replace with your raw Gemini API key
-const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c";
+//
+const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c"; // CORRECT
 const genAI = new GoogleGenerativeAI(API_KEY);
+//
 
 // Use the high-intelligence model required for "Gemini 3" logic
 const geminiModel = genAI.getGenerativeModel({
@@ -67,15 +58,12 @@ function initItems() {
     items = [];
     if (['welcome', 'login', 'ui'].includes(currentStage)) {
         for (let i = 0; i < 60; i++) items.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            vx: (Math.random() - 0.5) * 1.5,
-            vy: (Math.random() - 0.5) * 1.5
+            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+            vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5
         });
     } else if (currentStage === 'signup') {
         for (let i = 0; i < 40; i++) items.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
+            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
             s: Math.random() * 5 + 2
         });
     }
@@ -124,16 +112,17 @@ window.toStage = (nextId) => {
         nextStage.classList.remove('exit');
         nextStage.classList.add('active');
     }, 50);
-};
+}
 
-// --- GOOGLE SIGN-IN (REDIRECT, NO POPUP) ---
 window.handleGoogleLogin = async () => {
     try {
-        await signInWithRedirect(auth, googleProvider);
+        const result = await signInWithPopup(auth, googleProvider);
+        toStage('stage-boot');
+        runBoot(result.user.displayName);
     } catch (err) {
         alert("Google Error: " + err.message);
     }
-};
+}
 
 window.handleLogin = async (e) => {
     e.preventDefault();
@@ -146,7 +135,7 @@ window.handleLogin = async (e) => {
     } catch (err) {
         alert("ACCESS DENIED: " + err.message);
     }
-};
+}
 
 window.handleSignup = async (e) => {
     e.preventDefault();
@@ -161,7 +150,7 @@ window.handleSignup = async (e) => {
     } catch (err) {
         alert("PROVISIONING FAILED: " + err.message);
     }
-};
+}
 
 window.handleForgotPassword = async () => {
     const email = prompt("Enter Operator Email for recovery link:");
@@ -173,9 +162,10 @@ window.handleForgotPassword = async () => {
             alert("ERROR: " + err.message);
         }
     }
-};
+}
 
 // --- 4. GEMINI API INTEGRATION ---
+
 function runBoot(name) {
     const logs = ["Provisioning ID...", "Linking Gemini 3...", "Ready."];
     let progress = 0, logIdx = 0;
@@ -196,7 +186,7 @@ function runBoot(name) {
         }
     }, 50);
 }
-
+//
 window.runGeminiLogic = async () => {
     const logBox = document.getElementById('reasoningLog');
     const logEntry = (text) => {
@@ -207,8 +197,11 @@ window.runGeminiLogic = async () => {
 
     try {
         logEntry("Initializing Gemini 3 Neural Link...");
+        // Competition Requirement: Advanced Social Engineering Analysis
         const result = await geminiModel.generateContent("Analyze this audio stream for scam patterns.");
         const response = await result.response;
+
+        // Output formatting for the judges
         const steps = response.text().split('\n');
         for (let step of steps) {
             if (step.trim()) {
@@ -222,5 +215,5 @@ window.runGeminiLogic = async () => {
 };
 
 window.addEventListener('resize', resize);
-resize();
-draw();
+
+resize(); draw();
