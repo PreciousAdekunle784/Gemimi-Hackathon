@@ -6,14 +6,15 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     sendPasswordResetEmail,
-    onAuthStateChanged,
     updateProfile,
     signOut,
     GoogleAuthProvider,
-    signInWithPopup
+    signInWithRedirect,
+    getRedirectResult
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// --- 1. CONFIGURATION ---
+/* ------------------ 1. CONFIG ------------------ */
+
 const firebaseConfig = {
     apiKey: "AIzaSyC7YMHWKk8b5W-LDE_7P1UF86WCsmnBltY",
     authDomain: "anti-scam-ear.firebaseapp.com",
@@ -25,28 +26,28 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
 const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 
-// MANDATORY: Sign out on load
-signOut(auth);
+/* ❌ REMOVED: signOut(auth);  */
+/* Redirect auth REQUIRES session persistence */
 
-// Replace with your raw Gemini API key
-//
-const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c"; // CORRECT
+/* ------------------ 2. GEMINI ------------------ */
+
+const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c";
 const genAI = new GoogleGenerativeAI(API_KEY);
-//
 
-// Use the high-intelligence model required for "Gemini 3" logic
 const geminiModel = genAI.getGenerativeModel({
     model: "gemini-1.5-pro"
 });
 
-// --- 2. RESTORED ORIGINAL VISUAL ENGINE ---
+/* ------------------ 3. VISUAL ENGINE ------------------ */
+
 const canvas = document.getElementById('bgCanvas');
 const ctx = canvas.getContext('2d');
 let items = [];
 let currentStage = 'welcome';
-let currentOperator = { name: "User", email: "" };
 
 function resize() {
     canvas.width = window.innerWidth;
@@ -56,15 +57,12 @@ function resize() {
 
 function initItems() {
     items = [];
-    if (['welcome', 'login', 'ui'].includes(currentStage)) {
-        for (let i = 0; i < 60; i++) items.push({
-            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-            vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5
-        });
-    } else if (currentStage === 'signup') {
-        for (let i = 0; i < 40; i++) items.push({
-            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-            s: Math.random() * 5 + 2
+    for (let i = 0; i < 60; i++) {
+        items.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: (Math.random() - 0.5) * 1.5
         });
     }
 }
@@ -73,61 +71,64 @@ function draw() {
     ctx.fillStyle = '#02040a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    if (['welcome', 'login', 'ui'].includes(currentStage)) {
-        items.forEach((p, i) => {
-            p.x += p.vx; p.y += p.vy;
-            if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
-            if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
-            for (let j = i + 1; j < items.length; j++) {
-                let d = Math.hypot(p.x - items[j].x, p.y - items[j].y);
-                if (d < 150) {
-                    ctx.strokeStyle = `rgba(0, 242, 255, ${1 - d / 150})`;
-                    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(items[j].x, items[j].y); ctx.stroke();
-                }
+    items.forEach((p, i) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+
+        for (let j = i + 1; j < items.length; j++) {
+            let d = Math.hypot(p.x - items[j].x, p.y - items[j].y);
+            if (d < 150) {
+                ctx.strokeStyle = `rgba(0,242,255,${1 - d / 150})`;
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(items[j].x, items[j].y);
+                ctx.stroke();
             }
-        });
-    } else if (currentStage === 'signup') {
-        ctx.fillStyle = 'rgba(0, 242, 255, 0.2)'; ctx.font = '10px monospace';
-        items.forEach(d => {
-            d.y += d.s; if (d.y > canvas.height) d.y = -10;
-            ctx.fillText(Math.random() > 0.5 ? "1" : "0", d.x, d.y);
-        });
-    } else if (currentStage === 'boot') {
-        ctx.fillStyle = 'rgba(0, 242, 255, 0.05)';
-        ctx.fillRect(0, (Date.now() / 4) % canvas.height, canvas.width, 3);
-    }
+        }
+    });
+
     requestAnimationFrame(draw);
 }
 
-// --- 3. AUTH & NAVIGATION ---
+/* ------------------ 4. NAV ------------------ */
+
 window.toStage = (nextId) => {
-    document.querySelectorAll('.stage').forEach(s => {
-        s.classList.remove('active');
-        s.classList.add('exit');
-    });
-    const nextStage = document.getElementById(nextId);
-    currentStage = nextId.split('-')[1];
-    initItems();
-    setTimeout(() => {
-        nextStage.classList.remove('exit');
-        nextStage.classList.add('active');
-    }, 50);
-}
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    document.getElementById(nextId).classList.add('active');
+};
+
+/* ------------------ 5. GOOGLE SIGN-IN (REDIRECT) ------------------ */
 
 window.handleGoogleLogin = async () => {
     try {
-        const result = await signInWithPopup(auth, googleProvider);
-        toStage('stage-boot');
-        runBoot(result.user.displayName);
+        await signInWithRedirect(auth, googleProvider);
+        // Redirect happens immediately
     } catch (err) {
         alert("Google Error: " + err.message);
     }
-}
+};
+
+/* HANDLE REDIRECT RESULT ON LOAD */
+getRedirectResult(auth)
+    .then((result) => {
+        if (result?.user) {
+            toStage('stage-boot');
+            runBoot(result.user.displayName || "Operator");
+        }
+    })
+    .catch((err) => {
+        console.error("Redirect Error:", err);
+    });
+
+/* ------------------ 6. EMAIL AUTH ------------------ */
 
 window.handleLogin = async (e) => {
     e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const pass = document.getElementById('loginPass').value;
+    const email = loginEmail.value;
+    const pass = loginPass.value;
+
     try {
         await signInWithEmailAndPassword(auth, email, pass);
         toStage('stage-boot');
@@ -135,85 +136,88 @@ window.handleLogin = async (e) => {
     } catch (err) {
         alert("ACCESS DENIED: " + err.message);
     }
-}
+};
 
 window.handleSignup = async (e) => {
     e.preventDefault();
-    const email = document.getElementById('userEmail').value;
-    const name = document.getElementById('userName').value;
-    const pass = document.getElementById('userPass').value;
+    const email = userEmail.value;
+    const name = userName.value;
+    const pass = userPass.value;
+
     try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-        await updateProfile(userCredential.user, { displayName: name });
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        await updateProfile(cred.user, { displayName: name });
         toStage('stage-boot');
         runBoot(name);
     } catch (err) {
         alert("PROVISIONING FAILED: " + err.message);
     }
-}
+};
 
 window.handleForgotPassword = async () => {
-    const email = prompt("Enter Operator Email for recovery link:");
-    if (email) {
-        try {
-            await sendPasswordResetEmail(auth, email);
-            alert("RECOVERY LINK SENT. Check your inbox and SPAM folder.");
-        } catch (err) {
-            alert("ERROR: " + err.message);
-        }
-    }
-}
+    const email = prompt("Enter Operator Email:");
+    if (!email) return;
 
-// --- 4. GEMINI API INTEGRATION ---
+    try {
+        await sendPasswordResetEmail(auth, email);
+        alert("RECOVERY LINK SENT");
+    } catch (err) {
+        alert(err.message);
+    }
+};
+
+/* ------------------ 7. BOOT ------------------ */
 
 function runBoot(name) {
     const logs = ["Provisioning ID...", "Linking Gemini 3...", "Ready."];
-    let progress = 0, logIdx = 0;
+    let progress = 0, idx = 0;
+
     const logBox = document.getElementById('logContainer');
-    const interval = setInterval(() => {
+    logBox.innerHTML = "";
+
+    const timer = setInterval(() => {
         progress += 2;
-        if (progress >= 100) {
-            clearInterval(interval);
-            document.getElementById('finalUserMsg').innerText = `OPERATOR: ${name.toUpperCase()}`;
-            setTimeout(() => toStage('stage-ui'), 800);
+        percent.innerText = progress + "%";
+
+        if (progress > idx * 30 && logs[idx]) {
+            logBox.innerHTML += `<div>> ${logs[idx++]}</div>`;
         }
-        document.getElementById('percent').innerText = progress + "%";
-        if (progress > (logIdx * 30) && logIdx < logs.length) {
-            const div = document.createElement('div');
-            div.innerHTML = `> ${logs[logIdx]}`;
-            logBox.appendChild(div);
-            logIdx++;
+
+        if (progress >= 100) {
+            clearInterval(timer);
+            finalUserMsg.innerText = `OPERATOR: ${name.toUpperCase()}`;
+            setTimeout(() => toStage('stage-ui'), 800);
         }
     }, 50);
 }
-//
+
+/* ------------------ 8. GEMINI LOGIC ------------------ */
+
 window.runGeminiLogic = async () => {
-    const logBox = document.getElementById('reasoningLog');
-    const logEntry = (text) => {
-        const div = document.createElement('div');
-        div.innerHTML = `> ${text}`;
-        logBox.prepend(div);
+    const logBox = reasoningLog;
+
+    const log = (t) => {
+        const d = document.createElement('div');
+        d.innerHTML = `> ${t}`;
+        logBox.prepend(d);
     };
 
     try {
-        logEntry("Initializing Gemini 3 Neural Link...");
-        // Competition Requirement: Advanced Social Engineering Analysis
+        log("Initializing Gemini 3 Neural Link...");
         const result = await geminiModel.generateContent("Analyze this audio stream for scam patterns.");
-        const response = await result.response;
+        const text = result.response.text().split('\n');
 
-        // Output formatting for the judges
-        const steps = response.text().split('\n');
-        for (let step of steps) {
-            if (step.trim()) {
-                await new Promise(r => setTimeout(r, 800));
-                logEntry(step.replace(/[#*]/g, ''));
+        for (const line of text) {
+            if (line.trim()) {
+                await new Promise(r => setTimeout(r, 700));
+                log(line.replace(/[#*]/g, ""));
             }
         }
-    } catch (err) {
-        logEntry("CRITICAL ERROR: Check API Key and Model Name.");
+    } catch {
+        log("CRITICAL ERROR: GEMINI FAILURE");
     }
 };
 
 window.addEventListener('resize', resize);
-
-resize(); draw();
+resize();
+draw();
