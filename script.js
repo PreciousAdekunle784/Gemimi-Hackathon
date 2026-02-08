@@ -14,17 +14,6 @@ import {
     getRedirectResult
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-getRedirectResult(auth)
-    .then((result) => {
-        if (result && result.user) {
-            toStage('stage-boot');
-            runBoot(result.user.displayName || "Operator");
-        }
-    })
-    .catch((error) => {
-        console.error("Redirect Error:", error);
-    });
-
 // --- 1. CONFIGURATION ---
 const firebaseConfig = {
     apiKey: "AIzaSyC7YMHWKk8b5W-LDE_7P1UF86WCsmnBltY",
@@ -39,11 +28,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
+// ❌ REMOVED: signOut(auth);  (redirect sign-in requires session persistence)
+
 // Replace with your raw Gemini API key
-//
-const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c"; // CORRECT
+const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c";
 const genAI = new GoogleGenerativeAI(API_KEY);
-//
 
 // Use the high-intelligence model required for "Gemini 3" logic
 const geminiModel = genAI.getGenerativeModel({
@@ -88,7 +77,7 @@ function draw() {
             if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
             if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
             for (let j = i + 1; j < items.length; j++) {
-                let d = Math.hypot(p.x - items[j].x, p.y - items[j].y);
+                let d = Math.hypot(p.x - items[j].x, items[j].y - p.y);
                 if (d < 150) {
                     ctx.strokeStyle = `rgba(0, 242, 255, ${1 - d / 150})`;
                     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(items[j].x, items[j].y); ctx.stroke();
@@ -121,17 +110,28 @@ window.toStage = (nextId) => {
         nextStage.classList.remove('exit');
         nextStage.classList.add('active');
     }, 50);
-}
+};
 
+// ✅ GOOGLE SIGN-IN (REDIRECT — NO POPUP)
 window.handleGoogleLogin = async () => {
     try {
         await signInWithRedirect(auth, googleProvider);
-        // Browser will redirect to Google — nothing else runs here
     } catch (err) {
         alert("Google Error: " + err.message);
     }
 };
 
+// ✅ HANDLE REDIRECT RESULT → MOVE TO NEXT PAGE
+getRedirectResult(auth)
+    .then((result) => {
+        if (result && result.user) {
+            toStage('stage-boot');
+            runBoot(result.user.displayName);
+        }
+    })
+    .catch((err) => {
+        console.error("Google Redirect Error:", err);
+    });
 
 window.handleLogin = async (e) => {
     e.preventDefault();
@@ -144,7 +144,7 @@ window.handleLogin = async (e) => {
     } catch (err) {
         alert("ACCESS DENIED: " + err.message);
     }
-}
+};
 
 window.handleSignup = async (e) => {
     e.preventDefault();
@@ -159,7 +159,7 @@ window.handleSignup = async (e) => {
     } catch (err) {
         alert("PROVISIONING FAILED: " + err.message);
     }
-}
+};
 
 window.handleForgotPassword = async () => {
     const email = prompt("Enter Operator Email for recovery link:");
@@ -171,10 +171,9 @@ window.handleForgotPassword = async () => {
             alert("ERROR: " + err.message);
         }
     }
-}
+};
 
 // --- 4. GEMINI API INTEGRATION ---
-
 function runBoot(name) {
     const logs = ["Provisioning ID...", "Linking Gemini 3...", "Ready."];
     let progress = 0, logIdx = 0;
@@ -195,7 +194,7 @@ function runBoot(name) {
         }
     }, 50);
 }
-//
+
 window.runGeminiLogic = async () => {
     const logBox = document.getElementById('reasoningLog');
     const logEntry = (text) => {
@@ -206,11 +205,8 @@ window.runGeminiLogic = async () => {
 
     try {
         logEntry("Initializing Gemini 3 Neural Link...");
-        // Competition Requirement: Advanced Social Engineering Analysis
         const result = await geminiModel.generateContent("Analyze this audio stream for scam patterns.");
         const response = await result.response;
-
-        // Output formatting for the judges
         const steps = response.text().split('\n');
         for (let step of steps) {
             if (step.trim()) {
@@ -224,5 +220,5 @@ window.runGeminiLogic = async () => {
 };
 
 window.addEventListener('resize', resize);
-
-resize(); draw();
+resize();
+draw();
