@@ -10,8 +10,7 @@ import {
     updateProfile,
     signOut,
     GoogleAuthProvider,
-    signInWithRedirect,
-    getRedirectResult
+    signInWithRedirect
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 // --- 1. CONFIGURATION ---
@@ -28,7 +27,19 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-// ❌ REMOVED: signOut(auth);  (redirect sign-in requires session persistence)
+// ❌ IMPORTANT: DO NOT sign out on load
+// signOut(auth);
+
+// --- AUTH STATE HANDLER (THIS IS THE KEY FIX) ---
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        // If user already authenticated, skip welcome/login
+        if (currentStage !== 'boot' && currentStage !== 'ui') {
+            toStage('stage-boot');
+            runBoot(user.displayName || "Operator");
+        }
+    }
+});
 
 // Replace with your raw Gemini API key
 const API_KEY = "AIzaSyD64vZpN1c0QjNdxSaqnldpv1c5sPPgj1c";
@@ -56,12 +67,15 @@ function initItems() {
     items = [];
     if (['welcome', 'login', 'ui'].includes(currentStage)) {
         for (let i = 0; i < 60; i++) items.push({
-            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-            vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: (Math.random() - 0.5) * 1.5
         });
     } else if (currentStage === 'signup') {
         for (let i = 0; i < 40; i++) items.push({
-            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
             s: Math.random() * 5 + 2
         });
     }
@@ -77,7 +91,7 @@ function draw() {
             if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
             if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
             for (let j = i + 1; j < items.length; j++) {
-                let d = Math.hypot(p.x - items[j].x, items[j].y - p.y);
+                let d = Math.hypot(p.x - items[j].x, p.y - items[j].y);
                 if (d < 150) {
                     ctx.strokeStyle = `rgba(0, 242, 255, ${1 - d / 150})`;
                     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(items[j].x, items[j].y); ctx.stroke();
@@ -112,7 +126,7 @@ window.toStage = (nextId) => {
     }, 50);
 };
 
-// ✅ GOOGLE SIGN-IN (REDIRECT — NO POPUP)
+// --- GOOGLE SIGN-IN (REDIRECT, NO POPUP) ---
 window.handleGoogleLogin = async () => {
     try {
         await signInWithRedirect(auth, googleProvider);
@@ -120,18 +134,6 @@ window.handleGoogleLogin = async () => {
         alert("Google Error: " + err.message);
     }
 };
-
-// ✅ HANDLE REDIRECT RESULT → MOVE TO NEXT PAGE
-getRedirectResult(auth)
-    .then((result) => {
-        if (result && result.user) {
-            toStage('stage-boot');
-            runBoot(result.user.displayName);
-        }
-    })
-    .catch((err) => {
-        console.error("Google Redirect Error:", err);
-    });
 
 window.handleLogin = async (e) => {
     e.preventDefault();
